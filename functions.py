@@ -190,7 +190,7 @@ def update_stats(players, winners, us_app, us_win, s_app, s_win):
         suited = (players[i].hand[0][1] == players[i].hand[1][1])
         
         # Get indices
-        r, c = max(players[i].hand[0][0], players[i].hand[1][0]), min(players[i].hand[0][0], players[i].hand[1][0])
+        r, c = max(players[i].hand[0][0], players[i].hand[1][0])-2, min(players[i].hand[0][0], players[i].hand[1][0])-2
 
         # Fill app matrices
         if suited:
