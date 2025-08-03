@@ -1,35 +1,34 @@
-import random
+import numpy as np
+import matplotlib.pyplot as plt
 
 
 # Shuffle new deck
+suits = ["H", "D", "C", "S"]
+ranks = list(range(2, 15))
+deck_template = np.array([(rank, suit) for suit in suits for rank in ranks], dtype=[('rank', int), ('suit', 'U1')])
+
 def reset_deck():
-    suits = ["H", "D", "C", "S"]
-    ranks = range(2, 15)
-    deck = [(rank, suit) for suit in suits for rank in ranks]
-    random.shuffle(deck)
-    return deck
+    deck = deck_template.copy()  # Copy the template
+    np.random.shuffle(deck)     # NumPy shuffle
+    return deck.tolist()
 
 
 # Evaluate Hand
 def evaluate_hand(cards, ranks, suits):
-    """
-    Evaluates a poker hand and returns its ranking and high cards/kickers.
+    # Convert ranks and suits to NumPy arrays for faster operations
+    rank_counts = np.zeros(15, dtype=int)  # Index 2-14 for ranks
+    suit_counts = {s: [] for s in 'HDCS'}
     
-    Args:
-        cards: List of tuples [(rank, suit), ...] where rank is 2-14 (Ace=14) and suit is 'C', 'D', 'H', 'S'
-        ranks: Dict mapping rank to list of suits {rank: [suit, ...]}
-        suits: Dict mapping suit to list of ranks {suit: [rank, ...]}
+    for rank, suit in cards:
+        rank_counts[rank] += 1
+        suit_counts[suit].append(rank)
     
-    Returns:
-        Tuple (rank_value, high_cards) where:
-        - rank_value: Integer from 1-10 representing hand rank (10=Royal Flush, 1=High Card)
-        - high_cards: List of ranks [high_card, kicker1, kicker2, ...] for tiebreakers
-    """
-    # Check for flush (5+ cards of same suit)
-    is_flush = any(len(suit_ranks) >= 5 for suit_ranks in suits.values())
+    # Check for flush
+    flush_suit = next((s for s, r in suit_counts.items() if len(r) >= 5), None)
+    is_flush = flush_suit is not None
     
-    # Get sorted ranks for straight checking
-    sorted_ranks = sorted(ranks.keys(), reverse=True)
+    # Get sorted unique ranks
+    sorted_ranks = np.sort(np.where(rank_counts > 0)[0])[::-1]
     
     # Check for straight
     straight_high = 0
@@ -37,118 +36,97 @@ def evaluate_hand(cards, ranks, suits):
         if sorted_ranks[i] - sorted_ranks[i + 4] == 4:
             straight_high = sorted_ranks[i]
             break
-    # Check for Ace-low straight (A,2,3,4,5)
-    if 14 in ranks and 2 in ranks and 3 in ranks and 4 in ranks and 5 in ranks:
+    if 14 in sorted_ranks and 2 in sorted_ranks and 3 in sorted_ranks and 4 in sorted_ranks and 5 in sorted_ranks:
         straight_high = 5
-        
-    # Check for flush and straight combinations
+    
+    # Straight Flush and Royal Flush
+    if is_flush and straight_high:
+        suit_ranks = np.sort(suit_counts[flush_suit])[::-1]
+        for i in range(len(suit_ranks) - 4):
+            if suit_ranks[i] - suit_ranks[i + 4] == 4:
+                return (9, [suit_ranks[i]])
+        if straight_high == 5 and 14 in suit_ranks and 2 in suit_ranks and 3 in suit_ranks and 4 in suit_ranks and 5 in suit_ranks:
+            return (9, [5])
+        if all(r in suit_ranks for r in [10, 11, 12, 13, 14]):
+            return (10, [14])
+    
+    # Quads
+    quads = np.where(rank_counts == 4)[0]
+    if quads.size > 0:
+        rank = quads[0]
+        kicker = max(r for r in sorted_ranks if r != rank)
+        return (8, [rank, kicker])
+    
+    # Full House
+    trips = np.where(rank_counts == 3)[0]
+    pairs = np.where(rank_counts >= 2)[0]
+    if trips.size > 0 and pairs.size > 1:
+        trips_rank = max(trips)
+        pair_rank = max(r for r in pairs if r != trips_rank)
+        return (7, [trips_rank, pair_rank])
+    
+    # Flush
     if is_flush:
-        for suit, suit_ranks in suits.items():
-            if len(suit_ranks) >= 5:
-                suit_ranks = sorted(suit_ranks, reverse=True)
-                for i in range(len(suit_ranks) - 4):
-                    if suit_ranks[i] - suit_ranks[i + 4] == 4:
-                        return (9, [suit_ranks[i]])  # Straight Flush
-                # Check Ace-low straight flush
-                if 14 in suit_ranks and 2 in suit_ranks and 3 in suit_ranks and 4 in suit_ranks and 5 in suit_ranks:
-                    return (9, [5])
-                # Check Royal Flush
-                if all(r in suit_ranks for r in [10, 11, 12, 13, 14]):
-                    return (10, [14])
+        return (6, np.sort(suit_counts[flush_suit])[::-1][:5].tolist())
     
-    # Check for quads
-    for rank, rank_suits in ranks.items():
-        if len(rank_suits) == 4:
-            kicker = max(r for r in sorted_ranks if r != rank)
-            return (8, [rank, kicker])
-    
-    # Check for full house
-    trips = None
-    pair = None
-    for rank, rank_suits in ranks.items():
-        if len(rank_suits) == 3 and (trips is None or rank > trips):
-            trips = rank
-        elif len(rank_suits) >= 2 and (pair is None or rank > pair):
-            pair = rank
-    if trips and pair:
-        return (7, [trips, pair])
-    
-    # Check for flush
-    if is_flush:
-        for suit, suit_ranks in suits.items():
-            if len(suit_ranks) >= 5:
-                return (6, sorted(suit_ranks, reverse=True)[:5])
-    
-    # Check for straight
+    # Straight
     if straight_high:
         return (5, [straight_high])
     
-    # Check for three of a kind
-    for rank, rank_suits in ranks.items():
-        if len(rank_suits) == 3:
-            kickers = sorted([r for r in sorted_ranks if r != rank], reverse=True)[:2]
-            return (4, [rank] + kickers)
+    # Three of a Kind
+    if trips.size > 0:
+        rank = max(trips)
+        kickers = [r for r in sorted_ranks if r != rank][:2]
+        return (4, [rank] + kickers)
     
-    # Check for two pair
-    pairs = [rank for rank, rank_suits in ranks.items() if len(rank_suits) >= 2]
-    if len(pairs) >= 2:
-        pairs = sorted(pairs, reverse=True)[:2]
-        kicker = max(r for r in sorted_ranks if r not in pairs)
-        return (3, pairs + [kicker])
+    # Two Pair
+    if pairs.size >= 2:
+        top_pairs = np.sort(pairs)[-2:][::-1]
+        kicker = max(r for r in sorted_ranks if r not in top_pairs)
+        return (3, top_pairs.tolist() + [kicker])
     
-    # Check for one pair
-    for rank, rank_suits in ranks.items():
-        if len(rank_suits) == 2:
-            kickers = sorted([r for r in sorted_ranks if r != rank], reverse=True)[:3]
-            return (2, [rank] + kickers)
+    # One Pair
+    if pairs.size > 0:
+        rank = max(pairs)
+        kickers = [r for r in sorted_ranks if r != rank][:3]
+        return (2, [rank] + kickers)
     
-    # High card
-    return (1, sorted_ranks[:5])
+    # High Card
+    return (1, sorted_ranks[:5].tolist())
 
 
 # Determine Winner
 def determine_winner(table, players):
-    # Set default winner as first player
-    winners = [0]
-    players[0].evaluate(table)
-
-    for i in range(1, len(players)):
-        # Update each players hand rank and kickers
-        players[i].evaluate(table)
-
-        # If a player has equal rank
-        if players[i].show_rank == players[winners[0]].show_rank:
-            # If they have equal kickers append them to winners list
-            if players[i].strength == players[winners[0]].strength:
-                winners.append(i)
-            # If their kickers aren't different make the winner the first one to have a better card
-            else:
-                for j in range(len(players[i].strength)):
-                    if players[i].strength[j] > players[winners[0]].strength[j]:
-                        winners = [i]
-                        break
-                    if players[i].strength[j] < players[winners[0]].strength[j]:
-                        break
-        
-        # If a player has a higher rank make them the winner
-        if players[i].show_rank > players[winners[0]].show_rank:
-            winners = [i]
-
+    # Evaluate all hands first
+    for player in players:
+        player.evaluate(table)
+    
+    # Sort players by rank and strength
+    ranked_players = sorted(enumerate(players), key=lambda x: (x[1].show_rank, x[1].strength), reverse=True)
+    
+    # Find winners (those with the same rank and strength as the top player)
+    top_rank, top_strength = ranked_players[0][1].show_rank, ranked_players[0][1].strength
+    winners = [i for i, p in ranked_players if p.show_rank == top_rank and p.strength == top_strength]
+    
     return winners
 
 
 # Print Winner
-def print_winner(players, winners):
-    # Setup variables
+def print_winner(players, winners, sim, sims, print_interval=1000):
+    # Only print on interval to reduce overhead
+    if sim % print_interval != 0:
+        return
+    
+    # Establish key variables
     hand_rank = players[winners[0]].show_rank
     strength = players[winners[0]].strength
-    prefix = ""
+    encoding = {2:"2", 3:"3", 4:"4", 5:"5", 6:"6", 7:"7", 8:"8", 9:"9", 10:"10", 11:"Jack", 12:"Queen", 13:"King", 14:"Ace"}
     main_statement = ""
 
-    # Encode cards into names
-    encoding = {2:"2", 3:"3", 4:"4", 5:"5", 6:"6", 7:"7", 8:"8", 9:"9", 10:"10", 11:"Jack", 12:"Queen", 13:"King", 14:"Ace"}
+    # Set prefix for draw or single win
+    prefix = "Player " + str(winners[0]) + " Wins with " if len(winners) == 1 else "Players " + ", ".join(map(str, winners[:-1])) + f" and {winners[-1]} Tie with "
 
-    # Switch for hand rank
+    # Switch statement for different win types
     match hand_rank:
         case 10:
             main_statement = "a Royal Flush!"
@@ -171,39 +149,66 @@ def print_winner(players, winners):
         case 1:
             main_statement = f"a High Card of {encoding[strength[0]]}s, with {encoding[strength[1]]}-{encoding[strength[2]]}-{encoding[strength[3]]}-{encoding[strength[4]]} Kicker"
     
-    # Add prefix for single winner or tie
-    if len(winners) == 1:
-        prefix = f"Player {winners[0]} Wins with "
-    else:
-        for i in range(len(winners)-2):
-            prefix += f"{winners[i]}, "
-        prefix = "Players " + prefix + f"{winners[len(winners)-2]} and {winners[len(winners)-1]} Tie with "
-
-    # Print
-    print(prefix + main_statement)
+    # Print with percent complete
+    print(f"{prefix}{main_statement} ({round(100*(sim/sims), 2)}%)")
 
 
 # Update Stats
-def update_stats(players, winners, us_app, us_win, s_app, s_win):
-    for i in range(len(players)):
-        # Check suitedness
-        suited = (players[i].hand[0][1] == players[i].hand[1][1])
-        
-        # Get indices
-        r, c = max(players[i].hand[0][0], players[i].hand[1][0])-2, min(players[i].hand[0][0], players[i].hand[1][0])-2
+def update_stats(players, winners, us_app, us_win, s_app, s_win, wintype):
+    # Update win type
+    wintype[players[winners[0]].show_rank - 1] += 1
 
-        # Fill app matrices
-        if suited:
-            s_app[r][c] += 1
-        else: 
-            us_app[r][c] += 1
+    # Update matrices
+    for i, player in enumerate(players):
+        r1, s1 = player.hand[0]
+        r2, s2 = player.hand[1]
+        r, c = max(r1, r2) - 2, min(r1, r2) - 2
+        suited = s1 == s2
         
-        # Fill win matrices
-        if i in winners:
-            if suited:
-                s_win[r][c] += 1
-            else: 
-                us_win[r][c] += 1
+        if suited:
+            s_app[r, c] += 1
+            if i in winners:
+                s_win[r, c] += 1
+        else:
+            us_app[r, c] += 1
+            if i in winners:
+                us_win[r, c] += 1
     
-    # Return matrices
-    return us_app, us_win, s_app, s_win
+    # Return
+    return us_app, us_win, s_app, s_win, wintype
+
+
+# Plot Wintype
+def plot_wintype(wintype, sims):
+    # Define hand types for labels
+    hand_types = [
+        "High Card", "One Pair", "Two Pair", "Three of a Kind", 
+        "Straight", "Flush", "Full House", "Four of a Kind", 
+        "Straight Flush", "Royal Flush"
+    ]
+    
+    # Calculate percentages
+    percentages = (wintype / sims * 100)
+    
+    # Create bar chart
+    plt.figure(figsize=(10, 6))
+    bars = plt.bar(hand_types, percentages, color='skyblue', edgecolor='black')
+    
+    # Customize the plot
+    plt.title('Poker Hand Win Type Distribution', fontsize=14, pad=15)
+    plt.xlabel('Hand Type', fontsize=12)
+    plt.ylabel('Percentage of Wins (%)', fontsize=12)
+    plt.xticks(rotation=45, ha='right')
+    plt.grid(axis='y', linestyle='--', alpha=0.7)
+    
+    # Add percentage labels on top of bars
+    for bar in bars:
+        height = bar.get_height()
+        plt.text(bar.get_x() + bar.get_width()/2., height,
+                f'{height:.2f}%', ha='center', va='bottom')
+    
+    # Adjust layout to prevent label cutoff
+    plt.tight_layout()
+    
+    # Display the plot
+    plt.show()
