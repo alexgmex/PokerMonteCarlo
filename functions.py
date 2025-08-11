@@ -212,3 +212,21 @@ def plot_wintype(wintype, sims):
     
     # Display the plot
     plt.show()
+
+
+# Rank Hands
+def rank_hands(us_app, us_win, s_app, s_win):
+    # Establish variables
+    winchance = {}
+    encoding = {0:"2", 1:"3", 2:"4", 3:"5", 4:"6", 5:"7", 6:"8", 7:"9", 8:"10", 9:"J", 10:"Q", 11:"K", 12:"A"}
+
+    for row in range(13):
+        for col in range(row+1):
+            winchance[f"{encoding[row]}-{encoding[col]} o"] = round(100*(us_win[row][col]/us_app[row][col]),2)
+    
+    for row in range(1,13):
+        for col in range(row):
+            winchance[f"{encoding[row]}-{encoding[col]} s"] = round(100*(s_win[row][col]/s_app[row][col]),2)
+        
+    for key, value in sorted(winchance.items(), key=lambda x: x[1], reverse=True):
+        print(f"{key}: {value}%")
